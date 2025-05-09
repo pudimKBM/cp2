@@ -8,6 +8,7 @@ from joblib import Memory # Ensure this is imported
 import plotly.express as px 
 from pycaret.classification import *
 import openai
+import plotly.graph_objects as go # Added for gauge chart
 import re
 
 
@@ -605,26 +606,72 @@ else:
                 # --- Analytics Section for Online Prediction ---
                 with st.expander("📊 Detalhes da Predição e Dados de Entrada", expanded=True):
                     st.markdown("#### Resumo da Predição:")
-                    st.write(f"- **Score de Propensão (Probabilidade de Compra):** {score:.4f}")
-                    st.write(f"- **Threshold Aplicado para Decisão:** {threshold:.2f}")
-                    st.write(f"- **Decisão Final:** {'Comprar' if pred == 1 else 'Não Comprar'}")
+                    
+                    # Display score, threshold, and decision in columns for better layout
+                    col_score, col_thresh, col_decision = st.columns(3)
+                    with col_score:
+                        st.metric(label="Score de Propensão", value=f"{score:.4f}")
+                    with col_thresh:
+                        st.metric(label="Threshold Aplicado", value=f"{threshold:.2f}")
+                    with col_decision:
+                        st.metric(label="Decisão Final", value="Comprar" if pred == 1 else "Não Comprar")
+
+                    # Gauge Chart for Propensity Score
+                    st.markdown("---")
+                    st.markdown("##### Visualização do Score de Propensão:")
+                    fig_gauge = go.Figure(go.Indicator(
+                        mode = "gauge+number+delta",
+                        value = score,
+                        domain = {'x': [0, 1], 'y': [0, 1]},
+                        title = {'text': "Propensão de Compra", 'font': {'size': 20}},
+                        delta = {'reference': threshold, 'increasing': {'color': "green"}, 'decreasing': {'color': "red"}},
+                        gauge = {
+                            'axis': {'range': [0, 1], 'tickwidth': 1, 'tickcolor': "darkblue"},
+                            'bar': {'color': "darkblue" if pred == 0 else "blue"}, # Color of the main bar
+                            'bgcolor': "white",
+                            'borderwidth': 2,
+                            'bordercolor': "gray",
+                            'steps': [
+                                {'range': [0, threshold], 'color': 'rgba(255, 0, 0, 0.3)'}, # Light red for below threshold
+                                {'range': [threshold, 1], 'color': 'rgba(0, 255, 0, 0.3)'}   # Light green for above threshold
+                            ],
+                            'threshold': {
+                                'line': {'color': "black", 'width': 4},
+                                'thickness': 0.75,
+                                'value': threshold
+                            }
+                        }
+                    ))
+                    fig_gauge.update_layout(height=300, margin=dict(l=20, r=20, t=50, b=20))
+                    st.plotly_chart(fig_gauge, use_container_width=True)
                     
                     st.markdown("---")
                     st.markdown("#### Dados de Entrada Fornecidos:")
                     
-                    # Format input_data for display, ensuring order from features_online
-                    formatted_input_for_display = {}
-                    for feature_name in features_online: 
-                        value = input_data.get(feature_name)
-                        if feature_name == 'Complain' or feature_name.startswith('AcceptedCmp'):
-                            formatted_input_for_display[feature_name] = 'Sim' if value == 1 else 'Não'
-                        elif value is not None:
-                             formatted_input_for_display[feature_name] = value
-                        else:
-                             formatted_input_for_display[feature_name] = "N/A" # Should not occur with current UI
+                    # Define feature groups based on your input form structure
+                    demographic_features = ['Age', 'Education', 'Marital_Status', 'Income', 'Kidhome', 'Teenhome', 'Recency', 'Time_Customer', 'Complain']
+                    purchase_pattern_features = ['MntWines', 'MntFruits', 'MntMeatProducts', 'MntFishProducts', 'MntSweetProducts', 'MntGoldProds', 'NumDealsPurchases', 'NumWebPurchases', 'NumCatalogPurchases', 'NumStorePurchases', 'NumWebVisitsMonth']
+                    campaign_features = ['AcceptedCmp1', 'AcceptedCmp2', 'AcceptedCmp3', 'AcceptedCmp4', 'AcceptedCmp5']
 
-                    s_display_input = pd.Series(formatted_input_for_display, name='Valor Fornecido')
-                    st.dataframe(s_display_input)
+                    def format_and_display_features(title, feature_list):
+                        st.markdown(f"##### {title}")
+                        data_to_display = {}
+                        for feature_name in feature_list:
+                            if feature_name in input_data:
+                                value = input_data[feature_name]
+                                if feature_name == 'Complain' or feature_name.startswith('AcceptedCmp'):
+                                    data_to_display[feature_name] = 'Sim' if value == 1 else 'Não'
+                                else:
+                                    data_to_display[feature_name] = value
+                        if data_to_display:
+                            s_display = pd.Series(data_to_display, name='Valor Fornecido')
+                            st.dataframe(s_display)
+                        else:
+                            st.caption("Nenhum dado para esta categoria.")
+
+                    format_and_display_features("Dados Demográficos", demographic_features)
+                    format_and_display_features("Padrões de Compra", purchase_pattern_features)
+                    format_and_display_features("Campanhas Aceitas", campaign_features)
             else:
                 st.error("Erro: O modelo não retornou scores de probabilidade.")
         else:
